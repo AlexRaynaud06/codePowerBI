@@ -1,0 +1,57 @@
+let
+  cryptos = {"BTC", "ETH", "BNB", "ADA", "AVAX", "SOL", "FTM"}, 
+  devise = "EUR", 
+  Sourcex = (crypto as any, devise as any) =>
+    let 
+      today = Number.ToText(
+        Number.Round(
+          Duration.TotalSeconds(DateTime.FixedLocalNow() - #datetime(1970, 1, 1, 0, 0, 0))
+        )
+      ), 
+      Source1 = Table.PromoteHeaders(
+        Csv.Document(
+          Web.Contents(
+            "https://query1.finance.yahoo.com/v7/finance/download/"
+              & crypto
+              & "-"
+              & devise
+              & "?period1=0&period2="
+              & today
+              & "&interval=1d&events=history&includeAdjustedClose=true"
+          ), 
+          [Delimiter = ",", Columns = 7, Encoding = 65001, QuoteStyle = QuoteStyle.None]
+        ), 
+        [PromoteAllScalars = true]
+      ), 
+      Sourcex = Table.AddColumn(Source1, "Devise", each devise), 
+      Source1f = Table.AddColumn(Sourcex, "Crypto", each crypto), 
+      t2 = Table.TransformColumnTypes(
+        Source1f, 
+        {
+          {"Date", type date}, 
+          {"Open", type number}, 
+          {"High", type number}, 
+          {"Low", type number}, 
+          {"Close", type number}, 
+          {"Adj Close", type number}, 
+          {"Volume", Int64.Type}, 
+          {"Crypto", type text}
+        }
+      ), 
+      #"Lignes triées" = Table.Sort(t2, {{"Date", Order.Descending}}), 
+      #"Colonnes renommées" = Table.RenameColumns(
+        #"Lignes triées", 
+        {{"Open", "Ouverture"}, {"High", "Maxi"}, {"Low", "Mini"}, {"Close", "Clôture"}}
+      ), 
+      #"Colonnes supprimées" = Table.RemoveColumns(#"Colonnes renommées", {"Adj Close"})
+    in
+      #"Colonnes supprimées", 
+  Final = List.Accumulate(
+    cryptos, 
+    0, 
+    (state, current) =>
+      if state = 0 then Sourcex(current, devise) else Table.Combine({state, Sourcex(current,devise)})
+  ),
+    #"Lignes triées" = Table.Sort(Final,{{"Date", Order.Descending}})
+in
+  #"Lignes triées"
